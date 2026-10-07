@@ -1,22 +1,26 @@
 export type Turn = 'left' | 'right';
 
+/** Which face of the bar a section is measured on, relative to its reference bend. */
+export type Face = 'outside' | 'inside';
+
+/** A side of the bar relative to the direction of travel. */
+export type Side = 'left' | 'right';
+
 export interface BendInput {
   /** Straight section lengths, in order along the piece (turns.length + 1 of them). */
   sections: number[];
   /** Direction of each 90° bend, in order along the piece. */
   turns: Turn[];
+  /** Face each section is measured on (default: all outside). See `measuredSide`. */
+  faces?: Face[];
   /** Length lost per 90° bend (e.g. 11). */
   loss: number;
-  /**
-   * Material thickness. A section between two bends that turn opposite ways
-   * (a Z/S shape) is measured on one face, but the two bend corners sit on
-   * opposite faces, so this is added to that section.
-   */
+  /** Material thickness, used to convert inside-face dimensions to outside ones. */
   thickness: number;
 }
 
 export interface BendResult {
-  /** Section lengths after the thickness correction. */
+  /** Section lengths converted to outside-corner to outside-corner lengths. */
   adjustedSections: number[];
   /** Length to cut the straight stock. */
   cutLength: number;
@@ -24,11 +28,28 @@ export interface BendResult {
   marks: number[];
 }
 
-export function calculate({ sections, turns, loss, thickness }: BendInput): BendResult {
-  const last = sections.length - 1;
-  const adjustedSections = sections.map((length, i) =>
-    i > 0 && i < last && turns[i - 1] !== turns[i] ? length + thickness : length,
-  );
+/** The outside of a bend is the side it turns away from. */
+export const outsideSide = (turn: Turn): Side => (turn === 'right' ? 'left' : 'right');
+
+const otherSide = (side: Side): Side => (side === 'left' ? 'right' : 'left');
+
+/** Section `i` takes its outside/inside from the bend before it (or bend 0 for the first section). */
+export const referenceBend = (i: number) => Math.max(i - 1, 0);
+
+/** The side of the bar section `i` is measured on. */
+export function measuredSide(turns: Turn[], faces: Face[] | undefined, i: number): Side {
+  const side = outsideSide(turns[referenceBend(i)]);
+  return faces?.[i] === 'inside' ? otherSide(side) : side;
+}
+
+export function calculate({ sections, turns, faces, loss, thickness }: BendInput): BendResult {
+  const adjustedSections = sections.map((length, i) => {
+    const side = measuredSide(turns, faces, i);
+    // Each bend at either end of the section whose outside is on the other face
+    // is measured to its inside corner, which is one thickness short.
+    const ends = [turns[i - 1], turns[i]].filter((t): t is Turn => t !== undefined);
+    return length + ends.filter((t) => outsideSide(t) !== side).length * thickness;
+  });
 
   const cutLength = adjustedSections.reduce((a, b) => a + b, 0) - turns.length * loss;
 

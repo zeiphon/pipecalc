@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addBend, flip, MAX_BENDS, removeBend, setLength, type Shape } from './shape';
+import { addBend, flip, MAX_BENDS, removeBend, setLength, toggleFace, type Shape } from './shape';
 
-const z: Shape = { sections: [125, 206, 131], turns: ['right', 'left'] };
+const z: Shape = { sections: [125, 206, 131], turns: ['right', 'left'], faces: ['outside', 'outside', 'outside'] };
 
 describe('shape edits', () => {
   it('sets a section length', () => {
@@ -12,8 +12,16 @@ describe('shape edits', () => {
     expect(flip(z, 0).turns).toEqual(['left', 'left']);
   });
 
+  it('toggles the measured face', () => {
+    expect(toggleFace(z, 1).faces).toEqual(['outside', 'inside', 'outside']);
+  });
+
   it('adds a bend opposite to the previous one', () => {
-    expect(addBend(z)).toEqual({ sections: [125, 206, 131, 100], turns: ['right', 'left', 'right'] });
+    expect(addBend(z)).toEqual({
+      sections: [125, 206, 131, 100],
+      turns: ['right', 'left', 'right'],
+      faces: ['outside', 'outside', 'outside', 'outside'],
+    });
   });
 
   it('stops adding at the maximum', () => {
@@ -23,11 +31,12 @@ describe('shape edits', () => {
   });
 
   it('removes a bend with the section after it', () => {
-    expect(removeBend(z, 0)).toEqual({ sections: [125, 131], turns: ['left'] });
+    const s = toggleFace(z, 2);
+    expect(removeBend(s, 0)).toEqual({ sections: [125, 131], turns: ['left'], faces: ['outside', 'inside'] });
   });
 
   it('keeps at least one bend', () => {
-    const l: Shape = { sections: [100, 200], turns: ['right'] };
+    const l: Shape = { sections: [100, 200], turns: ['right'], faces: ['outside', 'outside'] };
     expect(removeBend(l, 0)).toBe(l);
   });
 });

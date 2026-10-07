@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { layout, type Point, type Turn } from './bend';
+import { layout, measuredSide, type Face, type Point, type Turn } from './bend';
 import { NumberField } from './NumberField';
 
 interface Props {
@@ -8,9 +8,11 @@ interface Props {
   /** Lengths used for the geometry (after thickness correction). */
   drawn: number[];
   turns: Turn[];
+  faces: Face[];
   canAdd: boolean;
   onLength: (i: number, length: number) => void;
   onFlip: (i: number) => void;
+  onToggleFace: (i: number) => void;
   onRemove: (i: number) => void;
   onAdd: () => void;
 }
@@ -26,7 +28,22 @@ const unit = (a: Point, b: Point): Point => {
   return { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
 };
 
-export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRemove, onAdd }: Props) {
+/** Unit normal pointing to the given side of travel direction `d` (screen coordinates, y down). */
+const toSide = (d: Point, side: 'left' | 'right'): Point =>
+  side === 'left' ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x };
+
+export function Diagram({
+  sections,
+  drawn,
+  turns,
+  faces,
+  canAdd,
+  onLength,
+  onFlip,
+  onToggleFace,
+  onRemove,
+  onAdd,
+}: Props) {
   const longest = Math.max(...drawn.map((l) => (l > 0 ? l : 0)), 1);
   const display = drawn.map((l) => Math.max(l, longest * MIN_FRACTION));
   const toScale = display.every((l, i) => l === drawn[i]);
@@ -79,6 +96,24 @@ export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRe
           strokeLinejoin="round"
           strokeLinecap="butt"
         />
+        {pts.slice(0, -1).map((a, i) => {
+          // Highlight the face each section is measured on.
+          const n = toSide(unit(a, pts[i + 1]), measuredSide(turns, faces, i));
+          const o = stroke * 0.55;
+          const b = pts[i + 1];
+          return (
+            <line
+              key={i}
+              x1={a.x + n.x * o}
+              y1={a.y + n.y * o}
+              x2={b.x + n.x * o}
+              y2={b.y + n.y * o}
+              className="stroke-amber-500"
+              strokeWidth={stroke * 0.3}
+              strokeLinecap="round"
+            />
+          );
+        })}
         <circle cx={pts[0].x} cy={pts[0].y} r={stroke * 0.9} className="fill-slate-500" />
       </svg>
 
@@ -93,20 +128,34 @@ export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRe
         const b = pts[i + 1];
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const d = unit(a, b);
-        // Label on the outside of the neighbouring bend, keeping the inside free for its × button.
-        const turn = turns[i] ?? turns[i - 1];
-        const n = turn === 'right' ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x };
+        // Label sits on the face the section is measured on, with its In/Out toggle beside it.
+        const n = toSide(d, measuredSide(turns, faces, i));
         const chars = Math.max(String(sections[i]).length, 2);
         const halfWidth = (chars * 10 + 20) / 2;
+        const off = { x: n.x * (halfWidth + 14), y: n.y * 30 };
+        const along = Math.abs(d.x) * (halfWidth + 22) + Math.abs(d.y) * 38;
+        const face = faces[i] ?? 'outside';
         return (
-          <div key={`len-${i}`} className="absolute" style={at(mid, n.x * (halfWidth + 14), n.y * 30)}>
-            <NumberField
-              value={sections[i]}
-              onChange={(v) => onLength(i, v)}
-              aria-label={`Section ${i + 1} length (mm)`}
-              style={{ width: `calc(${chars}ch + 1.25rem)` }}
-              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-base font-semibold tabular-nums text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            />
+          <div key={`len-${i}`}>
+            <button
+              type="button"
+              onClick={() => onToggleFace(i)}
+              aria-label={`Section ${i + 1} measured on the ${face}. Tap to switch.`}
+              title="Switch measured face"
+              className="absolute rounded-md bg-amber-100 px-1.5 py-1 text-[11px] font-bold uppercase leading-none text-amber-800 active:scale-95 dark:bg-amber-900/60 dark:text-amber-200"
+              style={at(mid, off.x + d.x * along, off.y + d.y * along)}
+            >
+              {face === 'outside' ? 'Out' : 'In'}
+            </button>
+            <div className="absolute" style={at(mid, off.x, off.y)}>
+              <NumberField
+                value={sections[i]}
+                onChange={(v) => onLength(i, v)}
+                aria-label={`Section ${i + 1} length (mm)`}
+                style={{ width: `calc(${chars}ch + 1.25rem)` }}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-base font-semibold tabular-nums text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </div>
           </div>
         );
       })}
@@ -115,8 +164,8 @@ export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRe
         const corner = pts[i + 1];
         const din = unit(pts[i], corner);
         const dout = unit(corner, pts[i + 2]);
-        // Inside of the bend, where the remove button sits clear of the labels.
-        const inside = unit({ x: 0, y: 0 }, { x: dout.x - din.x, y: dout.y - din.y });
+        // Outside of the bend's corner, clear of the dimension labels at the section midpoints.
+        const outside = unit({ x: 0, y: 0 }, { x: din.x - dout.x, y: din.y - dout.y });
         return (
           <div key={`bend-${i}`}>
             <button
@@ -135,7 +184,7 @@ export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRe
                 onClick={() => onRemove(i)}
                 aria-label={`Remove bend ${i + 1}`}
                 className="absolute grid size-7 place-items-center rounded-full bg-slate-200 text-base leading-none text-slate-600 active:scale-95 dark:bg-slate-700 dark:text-slate-300"
-                style={at(corner, inside.x * 34, inside.y * 34)}
+                style={at(corner, outside.x * 34, outside.y * 34)}
               >
                 ×
               </button>
