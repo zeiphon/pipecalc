@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { calculate } from './bend';
 import { Diagram } from './Diagram';
+import { Working } from './Working';
 import { NumberField } from './NumberField';
 import { addBend, flip, MAX_BENDS, removeBend, setLength, toggleFace, type Shape } from './shape';
 
@@ -108,6 +109,13 @@ export function App() {
             ))}
           </ol>
         </section>
+
+        <details className={card}>
+          <summary className="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400">
+            Show working
+          </summary>
+          <Working sections={sections} faces={faces} loss={loss} thickness={thickness} result={result} />
+        </details>
 
         <section className={`${card} grid grid-cols-2 gap-3`}>
           <label className="grid gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">

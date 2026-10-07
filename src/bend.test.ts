@@ -37,6 +37,7 @@ describe('measured face', () => {
       thickness: 6,
     });
     expect(r.adjustedSections).toEqual([125, 218, 131]);
+    expect(r.insideBends).toEqual([[], [0, 1], []]);
   });
 
   it('a Z middle is one thickness short whichever face it is measured on', () => {
