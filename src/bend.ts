@@ -22,6 +22,8 @@ export interface BendInput {
 export interface BendResult {
   /** Section lengths converted to outside-corner to outside-corner lengths. */
   adjustedSections: number[];
+  /** For each section, the bends (0-based) whose corner it was measured to on the inside face. */
+  insideBends: number[][];
   /** Length to cut the straight stock. */
   cutLength: number;
   /** Position of each bend centre, measured along the cut piece from the first end. */
@@ -43,13 +45,13 @@ export function measuredSide(turns: Turn[], faces: Face[] | undefined, i: number
 }
 
 export function calculate({ sections, turns, faces, loss, thickness }: BendInput): BendResult {
-  const adjustedSections = sections.map((length, i) => {
+  // A bend at either end of a section whose outside is on the other face is
+  // measured to its inside corner, which is one thickness short.
+  const insideBends = sections.map((_, i) => {
     const side = measuredSide(turns, faces, i);
-    // Each bend at either end of the section whose outside is on the other face
-    // is measured to its inside corner, which is one thickness short.
-    const ends = [turns[i - 1], turns[i]].filter((t): t is Turn => t !== undefined);
-    return length + ends.filter((t) => outsideSide(t) !== side).length * thickness;
+    return [i - 1, i].filter((b) => turns[b] !== undefined && outsideSide(turns[b]) !== side);
   });
+  const adjustedSections = sections.map((length, i) => length + insideBends[i].length * thickness);
 
   const cutLength = adjustedSections.reduce((a, b) => a + b, 0) - turns.length * loss;
 
@@ -60,7 +62,7 @@ export function calculate({ sections, turns, faces, loss, thickness }: BendInput
     return outside - i * loss - loss / 2;
   });
 
-  return { adjustedSections, cutLength, marks };
+  return { adjustedSections, insideBends, cutLength, marks };
 }
 
 export interface Point {
