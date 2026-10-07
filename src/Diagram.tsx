@@ -133,7 +133,7 @@ export function Diagram({
         const chars = Math.max(String(sections[i]).length, 2);
         const halfWidth = (chars * 10 + 20) / 2;
         const off = { x: n.x * (halfWidth + 14), y: n.y * 30 };
-        const along = Math.abs(d.x) * (halfWidth + 22) + Math.abs(d.y) * 38;
+        const along = Math.abs(d.x) * (halfWidth + 28) + Math.abs(d.y) * 42;
         const face = faces[i] ?? 'outside';
         return (
           <div key={`len-${i}`}>
@@ -142,7 +142,7 @@ export function Diagram({
               onClick={() => onToggleFace(i)}
               aria-label={`Section ${i + 1} measured on the ${face}. Tap to switch.`}
               title="Switch measured face"
-              className="absolute rounded-md bg-amber-100 px-1.5 py-1 text-[11px] font-bold uppercase leading-none text-amber-800 active:scale-95 dark:bg-amber-900/60 dark:text-amber-200"
+              className="absolute grid min-h-8 min-w-11 place-items-center rounded-lg bg-amber-100 px-2.5 text-xs font-bold uppercase leading-none text-amber-800 active:scale-95 dark:bg-amber-900/60 dark:text-amber-200"
               style={at(mid, off.x + d.x * along, off.y + d.y * along)}
             >
               {face === 'outside' ? 'Out' : 'In'}

@@ -110,13 +110,6 @@ export function App() {
           </ol>
         </section>
 
-        <details className={card}>
-          <summary className="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400">
-            Show working
-          </summary>
-          <Working sections={sections} faces={faces} loss={loss} thickness={thickness} result={result} />
-        </details>
-
         <section className={`${card} grid grid-cols-2 gap-3`}>
           <label className="grid gap-1 text-sm font-medium text-slate-600 dark:text-slate-400">
             Loss per bend (mm)
@@ -175,6 +168,13 @@ export function App() {
               </div>
             ))}
           </div>
+        </details>
+
+        <details className={card}>
+          <summary className="cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-400">
+            Show working
+          </summary>
+          <Working sections={sections} faces={faces} loss={loss} thickness={thickness} result={result} />
         </details>
       </main>
     </div>
