@@ -1,61 +1,164 @@
-import { layout, type Turn } from './bend';
+import type { CSSProperties } from 'react';
+import { layout, type Point, type Turn } from './bend';
+import { NumberField } from './NumberField';
 
 interface Props {
-  /** Lengths as the user entered them (used for labels). */
+  /** Lengths as entered (shown and edited on the labels). */
   sections: number[];
-  /** Lengths used for the geometry. */
+  /** Lengths used for the geometry (after thickness correction). */
   drawn: number[];
   turns: Turn[];
+  canAdd: boolean;
+  onLength: (i: number, length: number) => void;
+  onFlip: (i: number) => void;
+  onRemove: (i: number) => void;
+  onAdd: () => void;
 }
 
-const PAD = 48;
-const MIN_SIZE = 40;
+/** Shortest drawn section as a fraction of the longest, so short legs stay tappable. */
+const MIN_FRACTION = 0.5;
+/** Keep the drawing between these height/width ratios so it fits a phone screen. */
+const MIN_ASPECT = 0.8;
+const MAX_ASPECT = 1.1;
 
-export function Diagram({ sections, drawn, turns }: Props) {
-  const pts = layout(drawn, turns);
+const unit = (a: Point, b: Point): Point => {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+};
+
+export function Diagram({ sections, drawn, turns, canAdd, onLength, onFlip, onRemove, onAdd }: Props) {
+  const longest = Math.max(...drawn.map((l) => (l > 0 ? l : 0)), 1);
+  const display = drawn.map((l) => Math.max(l, longest * MIN_FRACTION));
+  const toScale = display.every((l, i) => l === drawn[i]);
+  const pts = layout(display, turns);
+
+  // Fit the view box around the shape, padded, with a phone-friendly aspect ratio.
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const w = Math.max(Math.max(...xs) - minX, MIN_SIZE);
-  const h = Math.max(Math.max(...ys) - minY, MIN_SIZE);
-  const stroke = Math.max(w, h) / 40;
-  const font = Math.max(w, h) / 14;
-  const pad = Math.max(w, h) / 5 + PAD / 4;
+  const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const pad = size * 0.22;
+  let vb = {
+    x: Math.min(...xs) - pad,
+    y: Math.min(...ys) - pad,
+    w: Math.max(...xs) - Math.min(...xs) + pad * 2,
+    h: Math.max(...ys) - Math.min(...ys) + pad * 2,
+  };
+  if (vb.h / vb.w < MIN_ASPECT) {
+    const h = vb.w * MIN_ASPECT;
+    vb = { ...vb, y: vb.y - (h - vb.h) / 2, h };
+  } else if (vb.h / vb.w > MAX_ASPECT) {
+    const w = vb.h / MAX_ASPECT;
+    vb = { ...vb, x: vb.x - (w - vb.w) / 2, w };
+  }
+
+  /** Absolutely position an overlay at a drawing point, nudged by a pixel offset. */
+  const at = (p: Point, dx = 0, dy = 0): CSSProperties => ({
+    left: `${((p.x - vb.x) / vb.w) * 100}%`,
+    top: `${((p.y - vb.y) / vb.h) * 100}%`,
+    transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px)`,
+  });
+
+  const stroke = size / 28;
+  const first = unit(pts[0], pts[1]);
+  const last = unit(pts[pts.length - 2], pts[pts.length - 1]);
+  const end = pts[pts.length - 1];
 
   return (
-    <svg
-      role="img"
-      aria-label="Pipe diagram"
-      viewBox={`${minX - pad} ${minY - pad} ${w + pad * 2} ${h + pad * 2}`}
-      className="diagram"
-    >
-      <polyline
-        points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={stroke}
-        strokeLinejoin="miter"
-      />
+    <div className="relative w-full select-none" style={{ aspectRatio: `${vb.w} / ${vb.h}` }}>
+      <svg
+        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        className="absolute inset-0 h-full w-full text-sky-600 dark:text-sky-400"
+        role="img"
+        aria-label="Pipe diagram"
+      >
+        <polyline
+          points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinejoin="round"
+          strokeLinecap="butt"
+        />
+        <circle cx={pts[0].x} cy={pts[0].y} r={stroke * 0.9} className="fill-slate-500" />
+      </svg>
+
+      <span
+        className="pointer-events-none absolute text-xs font-medium text-slate-500"
+        style={at(pts[0], -first.x * 32, -first.y * 32)}
+      >
+        Start
+      </span>
+
       {pts.slice(0, -1).map((a, i) => {
         const b = pts[i + 1];
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        const horizontal = a.y === b.y;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const d = unit(a, b);
+        // Label on the outside of the neighbouring bend, keeping the inside free for its × button.
+        const turn = turns[i] ?? turns[i - 1];
+        const n = turn === 'right' ? { x: d.y, y: -d.x } : { x: -d.y, y: d.x };
+        const chars = Math.max(String(sections[i]).length, 2);
+        const halfWidth = (chars * 10 + 20) / 2;
         return (
-          <text
-            key={i}
-            x={horizontal ? mx : mx + (stroke + font * 0.6)}
-            y={horizontal ? my - (stroke + font * 0.4) : my}
-            fontSize={font}
-            textAnchor={horizontal ? 'middle' : 'start'}
-            dominantBaseline="middle"
-            fill="currentColor"
-          >
-            {sections[i]}
-          </text>
+          <div key={`len-${i}`} className="absolute" style={at(mid, n.x * (halfWidth + 14), n.y * 30)}>
+            <NumberField
+              value={sections[i]}
+              onChange={(v) => onLength(i, v)}
+              aria-label={`Section ${i + 1} length (mm)`}
+              style={{ width: `calc(${chars}ch + 1.25rem)` }}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-base font-semibold tabular-nums text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
         );
       })}
-    </svg>
+
+      {turns.map((turn, i) => {
+        const corner = pts[i + 1];
+        const din = unit(pts[i], corner);
+        const dout = unit(corner, pts[i + 2]);
+        // Inside of the bend, where the remove button sits clear of the labels.
+        const inside = unit({ x: 0, y: 0 }, { x: dout.x - din.x, y: dout.y - din.y });
+        return (
+          <div key={`bend-${i}`}>
+            <button
+              type="button"
+              onClick={() => onFlip(i)}
+              aria-label={`Bend ${i + 1}, turns ${turn}. Tap to flip.`}
+              title="Tap to flip direction"
+              className="absolute grid size-10 place-items-center rounded-full border-2 border-sky-600 bg-white text-sm font-bold text-sky-700 shadow active:scale-95 dark:border-sky-400 dark:bg-slate-900 dark:text-sky-300"
+              style={at(corner)}
+            >
+              {i + 1}
+            </button>
+            {turns.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                aria-label={`Remove bend ${i + 1}`}
+                className="absolute grid size-7 place-items-center rounded-full bg-slate-200 text-base leading-none text-slate-600 active:scale-95 dark:bg-slate-700 dark:text-slate-300"
+                style={at(corner, inside.x * 34, inside.y * 34)}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      {canAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label="Add a bend at the end"
+          className="absolute grid size-10 place-items-center rounded-full border-2 border-dashed border-slate-400 bg-white text-xl leading-none text-slate-600 active:scale-95 dark:bg-slate-900 dark:text-slate-300"
+          style={at(end, last.x * 32, last.y * 32)}
+        >
+          +
+        </button>
+      )}
+
+      {!toScale && (
+        <span className="pointer-events-none absolute left-3 top-2 text-xs text-slate-400">Not to scale</span>
+      )}
+    </div>
   );
 }
